@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 libarchive3-sys-by-madosuki = { git = "https://github.com/madosuki/libarchive3-sys-by-madosuki" }
 thiserror = "1.0"
+anyhow = "1.0"
