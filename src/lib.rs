@@ -1,5 +1,5 @@
 use libarchive3_sys_by_madosuki as libarchive3_sys;
-use anyhow;
+use libarchive3_sys::ArchiveError;
 
 mod error;
 use error::{LibArchiveError, LibArchiveResult, LibArchiveInternalStatus};
@@ -23,27 +23,17 @@ impl ArchiveExt for Archive {
         }
     }
 
-    fn load_compressed_file(&self, file_path: &str) -> anyhow::Result<()> {
-        let _meta = std::fs::metadata(file_path)?;
-
+    fn load_compressed_file(&self, file_path: &str) -> LibArchiveResult<()> {
+        let _meta = std::fs::metadata(file_path).unwrap();
         if !_meta.is_file() {
-            return Err(LibArchiveError::IsNotFile.into());
+            return Err(LibArchiveError::NotFile);
         }
 
-        let _file_size = _meta.len() as usize;
+        let _file_path_cstr = std::ffi::CString::new(file_path).unwrap();
         
-        let _file_path_cstr = std::ffi::CString::new(file_path)?;
-        
-        let mut _status_code = unsafe {
-            libarchive3_sys::archive_read_open_filename(self.archive, _file_path_cstr.as_ptr(), _file_size)
+        let r = unsafe {
+            // libarchive3_sys::archive_read_open_filename(self.archive, &file_path.as_ptr(), 4737162)
         };
-
-        if _status_code != 0 {
-            let err_no = unsafe { libarchive3_sys::archive_errno(self.archive) };
-            let status = LibArchiveInternalStatus::from(err_no);
-
-            anyhow::bail!(LibArchiveError::LibArchiveInternalError(status));
-        }
 
         // let mut entry_count = 0;
         // let mut entry: *mut ArchiveEntryStruct = unsafe { libarchive3_sys::archive_entry_new() };
