@@ -1,7 +1,51 @@
 use libarchive3_sys_by_madosuki as libarchive3_sys;
+use libarchive3_sys::{ArchiveStruct, ArchiveEntryStruct};
 
+use std::ffi::c_char;
 mod error;
 use error::{LibArchiveError, LibArchiveResult, LibArchiveInternalStatus};
+
+fn convert_c_char_to_string(data: *const c_char) -> Option<String> {
+    if data.is_null() {
+        return None;
+    }
+
+    let c_str = unsafe { std::ffi::CStr::from_ptr(data) };
+    match c_str.to_str() {
+        Ok(v) => Some(v.to_string()),
+        _ => None
+    }
+}
+
+ fn load_data_from_entry(archive: *mut ArchiveStruct, entry_size: usize) -> LibArchiveResult<Vec<u8>> {
+    let mut offset = 0 as i64;
+    let mut result: Vec<u8> = vec!();
+
+    loop {
+        let mut buf: *mut u8 = Vec::with_capacity(entry_size).as_mut_ptr();
+        let mut _readed_size = 0 as usize;
+        let _r = unsafe { libarchive3_sys::archive_read_data_block(archive, &mut buf, &mut _readed_size, &mut offset) };
+
+        if _r == 1 {
+            break;
+        }
+
+        let for_safe: &[u8] = unsafe { std::slice::from_raw_parts(buf, _readed_size) };
+        result.append(&mut for_safe.to_vec());
+
+        if _r == 0 {
+            continue;
+        }
+    }
+
+    Ok(result)
+}
+
+pub struct DecompressedData {
+    file_name: String,
+    size: usize,
+    data: Vec<u8>,
+}
 
 pub struct Archive {
     archive: *mut libarchive3_sys_by_madosuki::ArchiveStruct,
@@ -9,20 +53,20 @@ pub struct Archive {
 
 pub trait ArchiveExt {
     fn new() -> LibArchiveResult<Archive>;
-    fn load_compressed_file(&self, file: &str) -> LibArchiveResult<()>;
+    fn extract_compressed_file_to_memory(&self, file: &str) -> LibArchiveResult<Vec<DecompressedData>>;
 }
 
 impl ArchiveExt for Archive {
     fn new() -> LibArchiveResult<Archive> {
         let archive = unsafe { libarchive3_sys_by_madosuki::archive_read_new() };
         if archive.is_null() {
-            Err(LibArchiveError::Null)
+            Err(LibArchiveError::FailedCreateArchive)
         } else {
             Ok(Archive { archive })
         }
     }
 
-    fn load_compressed_file(&self, file_path: &str) -> LibArchiveResult<()> {
+    fn extract_compressed_file_to_memory(&self, file_path: &str) -> LibArchiveResult<Vec<DecompressedData>> {
         let Ok(_meta) = std::fs::metadata(file_path) else {
             return Err(LibArchiveError::FailedGetMetaDataFromFile);
         };
@@ -45,10 +89,49 @@ impl ArchiveExt for Archive {
             }
         };
 
-        // let mut entry_count = 0;
-        // let mut entry: *mut ArchiveEntryStruct = unsafe { libarchive3_sys::archive_entry_new() };
+        let mut entry_count = 0;
+        let mut entry: *mut ArchiveEntryStruct = unsafe { libarchive3_sys::archive_entry_new() };
+        if entry.is_null() {
+            return Err(LibArchiveError::FailedCreateArchiveEntry);
+        }
 
-        Ok(())
+        let mut _result: Vec<DecompressedData> = vec!();
+        unsafe {
+            while libarchive3_sys::archive_read_next_header(self.archive, &mut entry) != 1 {
+                let _pathname = libarchive3_sys::archive_entry_pathname(entry);
+                if _pathname.is_null() {
+                    return Err(LibArchiveError::FailedGetPathNameFromEntry);
+                }
+
+                let mut _f_nmae = std::string::String::new();
+                match convert_c_char_to_string(_pathname) {
+                    Some(_n) => {
+                        _f_nmae = _n;
+                    },
+                    _ => {
+                        return Err(LibArchiveError::FailedGetPathNameFromEntry);
+                    },
+                }
+                
+                let mut _entry_size = libarchive3_sys::archive_entry_size(entry);
+                if _entry_size < 1 {
+                    return Err(LibArchiveError::EntrySizeLessThanOne);
+                }
+
+                let Ok(readed_data) = load_data_from_entry(self.archive, _entry_size as usize) else {
+                    return Err(LibArchiveError::FailedUncompress);
+                };
+
+                let tmp = DecompressedData {
+                    file_name: _f_nmae,
+                    size: _entry_size as usize,
+                    data: readed_data,
+                };
+                _result.push(tmp);
+            }
+        }
+
+        Ok(_result)
     }
 }
 

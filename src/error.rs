@@ -50,6 +50,14 @@ fn generate_message(status: &LibArchiveInternalStatus) -> String {
 pub enum LibArchiveError {
     #[error("Null")]
     Null,
+    #[error("Failed create archive entry")]
+    FailedCreateArchiveEntry,
+    #[error("Failed create archive")]
+    FailedCreateArchive,
+    #[error("Failed get pathname from entry")]
+    FailedGetPathNameFromEntry,
+    #[error("Entry size less than one")]
+    EntrySizeLessThanOne,
     #[error("NulError from ffi")]
     NulError,
     #[error("Failed get metadata from file")]
@@ -58,6 +66,8 @@ pub enum LibArchiveError {
     IsNotFile,
     #[error("is not exists")]
     IsNotExists,
+    #[error("Failed uncompress")]
+    FailedUncompress,
     #[error("libarchive internal error: {0}")]
     LibArchiveInternalError(LibArchiveInternalStatus),
 }
