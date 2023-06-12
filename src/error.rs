@@ -50,10 +50,6 @@ fn generate_message(status: &LibArchiveInternalStatus) -> String {
 pub enum LibArchiveError {
     #[error("Null")]
     Null,
-    #[error("NulError from ffi")]
-    NulError,
-    #[error("failed get metadata from file")]
-    FailedGetMetaFromFile,
     #[error("is not file")]
     IsNotFile,
     #[error("is not exists")]

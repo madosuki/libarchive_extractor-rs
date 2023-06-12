@@ -10,7 +10,7 @@ pub struct Archive {
 
 pub trait ArchiveExt {
     fn new() -> LibArchiveResult<Archive>;
-    fn load_compressed_file(&self, file: &str) -> LibArchiveResult<()>;
+    fn load_compressed_file(&self, file: &str) -> anyhow::Result<()>;
 }
 
 impl ArchiveExt for Archive {
@@ -23,20 +23,16 @@ impl ArchiveExt for Archive {
         }
     }
 
-    fn load_compressed_file(&self, file_path: &str) -> LibArchiveResult<()> {
-        let Ok(_meta) = std::fs::metadata(file_path) else {
-            return Err(LibArchiveError::FailedGetMetaFromFile.into())?;
-        };
-        
+    fn load_compressed_file(&self, file_path: &str) -> anyhow::Result<()> {
+        let _meta = std::fs::metadata(file_path)?;
+
         if !_meta.is_file() {
-            // return Err(LibArchiveError::IsNotFile);
+            return Err(LibArchiveError::IsNotFile.into());
         }
 
         let _file_size = _meta.len() as usize;
         
-        let Ok(_file_path_cstr) = std::ffi::CString::new(file_path) else {
-            return Err(LibArchiveError::NulError.into())?;
-        };
+        let _file_path_cstr = std::ffi::CString::new(file_path)?;
         
         let mut _status_code = unsafe {
             libarchive3_sys::archive_read_open_filename(self.archive, _file_path_cstr.as_ptr(), _file_size)
@@ -45,7 +41,8 @@ impl ArchiveExt for Archive {
         if _status_code != 0 {
             let err_no = unsafe { libarchive3_sys::archive_errno(self.archive) };
             let status = LibArchiveInternalStatus::from(err_no);
-            return Err(LibArchiveError::LibArchiveInternalError(status).into())?;
+
+            anyhow::bail!(LibArchiveError::LibArchiveInternalError(status));
         }
 
         // let mut entry_count = 0;
