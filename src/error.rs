@@ -3,13 +3,14 @@ use libarchive3_sys_by_madosuki as libarchive3_sys;
 use thiserror::Error;
 
 #[derive(Debug)]
+#[repr(i32)]
 pub enum LibArchiveInternalStatus {
-    ArchiveOk = libarchive3_sys::ARCHIVE_OK as isize,
-    ArchiveFailed = libarchive3_sys::ARCHIVE_FAILED as isize,
-    ArchiveEof = libarchive3_sys::ARCHIVE_EOF as isize,
-    ArchiveFatal = libarchive3_sys::ARCHIVE_FATAL as isize,
-    ArchiveRetry = libarchive3_sys::ARCHIVE_RETRY as isize,
-    ArchiveWarn = libarchive3_sys::ARCHIVE_WARN as isize,
+    ArchiveOk = libarchive3_sys::ARCHIVE_OK,
+    ArchiveFailed = libarchive3_sys::ARCHIVE_FAILED,
+    ArchiveEof = libarchive3_sys::ARCHIVE_EOF,
+    ArchiveFatal = libarchive3_sys::ARCHIVE_FATAL,
+    ArchiveRetry = libarchive3_sys::ARCHIVE_RETRY,
+    ArchiveWarn = libarchive3_sys::ARCHIVE_WARN,
     Unknown,
 }
 

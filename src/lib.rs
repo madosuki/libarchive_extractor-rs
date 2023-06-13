@@ -5,6 +5,18 @@ use std::ffi::c_char;
 mod error;
 use error::{LibArchiveError, LibArchiveResult, LibArchiveInternalStatus};
 
+fn cehck_valid_file_path(file_path: &str) -> LibArchiveResult<std::fs::Metadata> {
+    let Ok(_meta) = std::fs::metadata(file_path) else {
+        return Err(LibArchiveError::FailedGetMetaDataFromFile);
+    };
+        
+    if !_meta.is_file() {
+        return Err(LibArchiveError::IsNotFile);
+    }
+
+    Ok(_meta)
+}
+
 fn convert_c_char_to_string(data: *const c_char) -> Option<String> {
     if data.is_null() {
         return None;
@@ -17,7 +29,7 @@ fn convert_c_char_to_string(data: *const c_char) -> Option<String> {
     }
 }
 
- fn load_data_from_entry(archive: *mut ArchiveStruct, entry_size: usize) -> LibArchiveResult<Vec<u8>> {
+fn load_data_from_entry(archive: *mut ArchiveStruct, entry_size: usize) -> LibArchiveResult<Vec<u8>> {
     let mut offset = 0 as i64;
     let mut result: Vec<u8> = vec!();
 
@@ -89,7 +101,6 @@ impl ArchiveExt for Archive {
             }
         };
 
-        let mut entry_count = 0;
         let mut entry: *mut ArchiveEntryStruct = unsafe { libarchive3_sys::archive_entry_new() };
         if entry.is_null() {
             return Err(LibArchiveError::FailedCreateArchiveEntry);
