@@ -5,18 +5,6 @@ use std::ffi::c_char;
 mod error;
 use error::{LibArchiveError, LibArchiveResult, LibArchiveInternalStatus};
 
-fn cehck_valid_file_path(file_path: &str) -> LibArchiveResult<std::fs::Metadata> {
-    let Ok(_meta) = std::fs::metadata(file_path) else {
-        return Err(LibArchiveError::FailedGetMetaDataFromFile);
-    };
-        
-    if !_meta.is_file() {
-        return Err(LibArchiveError::IsNotFile);
-    }
-
-    Ok(_meta)
-}
-
 fn convert_c_char_to_string(data: *const c_char) -> Option<String> {
     if data.is_null() {
         return None;
@@ -65,6 +53,7 @@ pub struct Archive {
 
 pub trait ArchiveExt {
     fn new() -> LibArchiveResult<Archive>;
+    fn init(&self) -> LibArchiveResult<()>;
     fn extract_compressed_file_to_memory(&self, file: &str) -> LibArchiveResult<Vec<DecompressedData>>;
 }
 
@@ -76,6 +65,23 @@ impl ArchiveExt for Archive {
         } else {
             Ok(Archive { archive })
         }
+    }
+
+    fn init(&self) -> LibArchiveResult<()> {
+        let mut _r = unsafe { libarchive3_sys::archive_read_support_filter_all(self.archive) };
+        if _r != 0 {
+            let code = unsafe { libarchive3_sys::archive_errno(self.archive) };
+            return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(code)));
+        }
+
+        _r = unsafe { libarchive3_sys::archive_read_support_format_all(self.archive) };
+        if _r != 0 {
+            let code = unsafe { libarchive3_sys::archive_errno(self.archive) };
+            return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(code)));
+        }
+
+
+        Ok(())
     }
 
     fn extract_compressed_file_to_memory(&self, file_path: &str) -> LibArchiveResult<Vec<DecompressedData>> {
