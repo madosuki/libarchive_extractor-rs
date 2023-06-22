@@ -41,6 +41,7 @@ fn load_data_from_entry(archive: *mut ArchiveStruct, entry_size: usize) -> LibAr
     Ok(result)
 }
 
+#[derive(Debug)]
 pub struct DecompressedData {
     file_name: String,
     size: usize,
@@ -55,6 +56,7 @@ pub trait ArchiveExt {
     fn new() -> LibArchiveResult<Archive>;
     fn init(&self) -> LibArchiveResult<()>;
     fn extract_compressed_file_to_memory(&self, file: &str) -> LibArchiveResult<Vec<DecompressedData>>;
+    fn get_errno(&self) -> Option<i32>;
 }
 
 impl ArchiveExt for Archive {
@@ -70,18 +72,25 @@ impl ArchiveExt for Archive {
     fn init(&self) -> LibArchiveResult<()> {
         let mut _r = unsafe { libarchive3_sys::archive_read_support_filter_all(self.archive) };
         if _r != 0 {
-            let code = unsafe { libarchive3_sys::archive_errno(self.archive) };
-            return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(code)));
+            return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(_r)));
         }
 
         _r = unsafe { libarchive3_sys::archive_read_support_format_all(self.archive) };
         if _r != 0 {
-            let code = unsafe { libarchive3_sys::archive_errno(self.archive) };
-            return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(code)));
+            return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(_r)));
         }
 
-
         Ok(())
+    }
+
+    fn get_errno(&self) -> Option<i32> {
+        if self.archive.is_null() {
+            return None;
+        }
+        
+        unsafe {
+            Some(libarchive3_sys::archive_errno(self.archive))
+        }
     }
 
     fn extract_compressed_file_to_memory(&self, file_path: &str) -> LibArchiveResult<Vec<DecompressedData>> {
