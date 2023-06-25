@@ -2,6 +2,7 @@ use libarchive3_sys_by_madosuki as libarchive3_sys;
 use libarchive3_sys::{ArchiveStruct, ArchiveEntryStruct};
 
 use std::ffi::c_char;
+use std::ffi::c_void;
 mod error;
 use error::{LibArchiveError, LibArchiveResult, LibArchiveInternalStatus};
 
@@ -22,15 +23,15 @@ fn load_data_from_entry(archive: *mut ArchiveStruct, entry_size: usize) -> LibAr
     let mut result: Vec<u8> = vec!();
 
     loop {
-        let mut buf: *mut u8 = Vec::with_capacity(entry_size).as_mut_ptr();
+        let tmp: *mut c_void = std::ptr::null_mut();
         let mut _readed_size = 0 as usize;
-        let _r = unsafe { libarchive3_sys::archive_read_data_block(archive, &mut buf, &mut _readed_size, &mut offset) };
+        let _r = unsafe { libarchive3_sys::archive_read_data_block(archive, &tmp, &mut _readed_size, &mut offset) };
 
         if _r == 1 {
             break;
         }
 
-        let for_safe: &[u8] = unsafe { std::slice::from_raw_parts(buf, _readed_size) };
+        let for_safe: &[u8] = unsafe { std::slice::from_raw_parts(tmp as *mut u8, _readed_size) };
         result.append(&mut for_safe.to_vec());
 
         if _r == 0 {
@@ -162,13 +163,3 @@ impl ArchiveExt for Archive {
 }
 
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-
-//     #[test]
-//     fn it_works() {
-//         let result = add(2, 2);
-//         assert_eq!(result, 4);
-//     }
-// }

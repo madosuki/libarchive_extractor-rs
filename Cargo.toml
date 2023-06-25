@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-libarchive3-sys-by-madosuki = { git = "https://github.com/madosuki/libarchive3-sys-by-madosuki" }
+# libarchive3-sys-by-madosuki = { git = "https://github.com/madosuki/libarchive3-sys-by-madosuki" }
+libarchive3-sys-by-madosuki = { path = "../libarchive-sys" }
 thiserror = "1.0"
 libc = "0.2"
