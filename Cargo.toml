@@ -1,12 +1,13 @@
 [package]
-name = "libarchive-rs-by-madosuki"
+name = "archive_extractor"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-# libarchive3-sys-by-madosuki = { git = "https://github.com/madosuki/libarchive3-sys-by-madosuki" }
-libarchive3-sys-by-madosuki = { path = "../libarchive-sys" }
+libc = "0.2.0"
 thiserror = "1.0"
-libc = "0.2"
+
+[dependencies.libarchive3-sys-by-madosuki]
+git = "https://github.com/madosuki/libarchive3-sys-by-madosuki"
