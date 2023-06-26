@@ -1,6 +1,7 @@
 use libarchive3_sys_by_madosuki as libarchive3_sys;
 use libarchive3_sys::{ArchiveStruct, ArchiveEntryStruct};
 
+use std::io::prelude::Write;
 use std::ffi::c_char;
 use std::ffi::c_void;
 mod error;
@@ -58,6 +59,38 @@ fn load_datum_from_entry(archive: *mut ArchiveStruct, entry_size: usize) -> LibA
     Ok(result)
 }
 
+fn write_file_to_dir(dir_path: &str, file_name: &str, data: &[u8]) -> LibArchiveResult<()> {
+    let _dir_path = std::path::Path::new(dir_path);
+    let mut _r: i32 = 0;
+    if !_dir_path.exists() {
+        let _create_dir_result = std::fs::create_dir(dir_path);
+        if _create_dir_result.is_err() {
+            return Err(LibArchiveError::FailedCreateDirectory);
+        }
+    }
+
+    let _f_path_buf = _dir_path.join(file_name);
+    let Ok(mut fp) = std::fs::File::create(&_f_path_buf) else {
+        return Err(LibArchiveError::FailedCreateFile);
+    };
+    
+    match fp.write_all(&data) {
+        Ok(_) => {
+            match fp.flush() {
+                Ok(_) => Ok(()),
+                _ => {
+                    return Err(LibArchiveError::FailedFlushWhenWrite);
+                }
+            }
+        },
+        Err(_) => {
+            return Err(LibArchiveError::FailedWriteFile);
+        }
+    }
+
+}
+
+
 #[derive(Debug)]
 pub struct FileInfo {
     file_name: String,
@@ -79,7 +112,7 @@ pub trait ArchiveExt {
     fn init(&self) -> LibArchiveResult<()>;
     fn extract_compressed_file_to_memory(&self, file_path: &str) -> LibArchiveResult<Vec<DecompressedData>>;
     fn get_errno(&self) -> Option<i32>;
-    fn read_and_write_to_specific_dir(&self, file_path: &str) -> LibArchiveResult<Vec<FileInfo>>;
+    fn read_and_write_to_specific_dir(&self, file_path: &str, target_dir_path: &str) -> LibArchiveResult<Vec<FileInfo>>;
 }
 
 impl ArchiveExt for Archive {
@@ -186,7 +219,7 @@ impl ArchiveExt for Archive {
         Ok(_result)
     }
 
-    fn read_and_write_to_specific_dir(&self, file_path: &str) -> LibArchiveResult<Vec<FileInfo>> {
+    fn read_and_write_to_specific_dir(&self, file_path: &str, target_dir_path: &str) -> LibArchiveResult<Vec<FileInfo>> {
         let Ok(_meta) = std::fs::metadata(file_path) else {
             return Err(LibArchiveError::FailedGetMetaDataFromFile);
         };
@@ -200,7 +233,7 @@ impl ArchiveExt for Archive {
         };
 
         let _f_size = _meta.len() as usize;
-        
+
         unsafe {
             let _status_code = libarchive3_sys::archive_read_open_filename(self.archive, _file_path_cstr.as_ptr(), _f_size);
             if _status_code != 0 {
@@ -235,12 +268,20 @@ impl ArchiveExt for Archive {
                     return Err(LibArchiveError::FailedUncompress);
                 };
 
-                let tmp = FileInfo {
-                    file_name: _f_name,
-                    size: _entry_size as usize,
-                };
+                let write_result = write_file_to_dir(target_dir_path, &_f_name, &readed_data);
+                match write_result {
+                    Ok(_) => {
+                        let tmp = FileInfo {
+                            file_name: _f_name,
+                            size: _entry_size as usize,
+                        };
 
-                _result.push(tmp);
+                        _result.push(tmp);
+                    },
+                    Err(e) => {
+                        return Err(e);
+                    }
+                }
             }
         }
 

@@ -55,6 +55,14 @@ pub enum LibArchiveError {
     FailedCreateArchiveEntry,
     #[error("Failed create archive")]
     FailedCreateArchive,
+    #[error("Failed create directory")]
+    FailedCreateDirectory,
+    #[error("Failed create file")]
+    FailedCreateFile,
+    #[error("Failed write file")]
+    FailedWriteFile,
+    #[error("Failed flush when write")]
+    FailedFlushWhenWrite,
     #[error("Failed get pathname from entry")]
     FailedGetPathNameFromEntry,
     #[error("Entry size less than one")]
@@ -63,8 +71,12 @@ pub enum LibArchiveError {
     NulError,
     #[error("Failed get metadata from file")]
     FailedGetMetaDataFromFile,
+    #[error("Failed get metadata from dir")]
+    FailedGetMetaDataFromDir,
     #[error("is not file")]
     IsNotFile,
+    #[error("is not dir")]
+    IsNotDir,
     #[error("is not exists")]
     IsNotExists,
     #[error("Failed uncompress")]
