@@ -113,6 +113,8 @@ pub trait ArchiveExt {
     fn extract_compressed_file_to_memory(&self, file_path: &str) -> LibArchiveResult<Vec<DecompressedData>>;
     fn get_errno(&self) -> Option<i32>;
     fn read_and_write_to_specific_dir(&self, file_path: &str, target_dir_path: &str) -> LibArchiveResult<Vec<FileInfo>>;
+    fn read_close_and_free(&self) -> LibArchiveResult<()>;
+    fn free(&mut self) -> LibArchiveResult<()>;
 }
 
 impl ArchiveExt for Archive {
@@ -123,6 +125,15 @@ impl ArchiveExt for Archive {
         } else {
             Ok(Archive { archive })
         }
+    }
+
+    fn free(&mut self) -> LibArchiveResult<()> {
+        let status_code = unsafe { libarchive3_sys::archive_free(self.archive) };
+        if status_code != 0 {
+            return Err(LibArchiveError::FailedFreeArchive);
+        }
+        self.archive = std::ptr::null_mut();
+        Ok(())
     }
 
     fn init(&self) -> LibArchiveResult<()> {
@@ -149,6 +160,20 @@ impl ArchiveExt for Archive {
         }
     }
 
+    fn read_close_and_free(&self) -> LibArchiveResult<()> {
+        let close_status_code = unsafe { libarchive3_sys::archive_read_close(self.archive) };
+        if close_status_code != 0 {
+            return Err(LibArchiveError::FailedCloseReadArchive);
+        }
+
+        let free_status_code = unsafe { libarchive3_sys::archive_read_free(self.archive) };
+        if free_status_code != 0 {
+            return Err(LibArchiveError::FailedFreeReadArchive);
+        }
+
+        Ok(())
+    }
+
     fn extract_compressed_file_to_memory(&self, file_path: &str) -> LibArchiveResult<Vec<DecompressedData>> {
         let Ok(_meta) = std::fs::metadata(file_path) else {
             return Err(LibArchiveError::FailedGetMetaDataFromFile);
@@ -173,7 +198,15 @@ impl ArchiveExt for Archive {
 
         let mut entry: *mut ArchiveEntryStruct = unsafe { libarchive3_sys::archive_entry_new() };
         if entry.is_null() {
-            return Err(LibArchiveError::FailedCreateArchiveEntry);
+            match self.read_close_and_free() {
+                Ok(_) => {
+                    return Err(LibArchiveError::FailedCreateArchiveEntry);
+                },
+                Err(e) => {
+                    return Err(e);
+                }
+            }
+
         }
 
         let mut _result: Vec<DecompressedData> = vec!();
@@ -181,6 +214,7 @@ impl ArchiveExt for Archive {
             while libarchive3_sys::archive_read_next_header(self.archive, &mut entry) != 1 {
                 let _pathname = libarchive3_sys::archive_entry_pathname(entry);
                 if _pathname.is_null() {
+                    let _ = self.read_close_and_free();
                     return Err(LibArchiveError::FailedGetPathNameFromEntry);
                 }
 
@@ -190,16 +224,19 @@ impl ArchiveExt for Archive {
                         _f_name = _n;
                     },
                     _ => {
+                        let _ = self.read_close_and_free();
                         return Err(LibArchiveError::FailedGetPathNameFromEntry);
                     },
                 }
                 
                 let mut _entry_size = libarchive3_sys::archive_entry_size(entry);
                 if _entry_size < 1 {
+                    let _ = self.read_close_and_free();
                     return Err(LibArchiveError::EntrySizeLessThanOne);
                 }
 
                 let Ok(readed_data) = load_datum_from_entry(self.archive, _entry_size as usize) else {
+                    let _ = self.read_close_and_free();
                     return Err(LibArchiveError::FailedUncompress);
                 };
 
@@ -216,6 +253,7 @@ impl ArchiveExt for Archive {
             }
         }
 
+        let _ = self.read_close_and_free();
         Ok(_result)
     }
 
@@ -243,6 +281,7 @@ impl ArchiveExt for Archive {
 
         let mut entry: *mut ArchiveEntryStruct = unsafe { libarchive3_sys::archive_entry_new() };
         if entry.is_null() {
+            let _ = self.read_close_and_free();
             return Err(LibArchiveError::FailedCreateArchiveEntry);
         }
 
@@ -255,16 +294,19 @@ impl ArchiveExt for Archive {
                         _f_name = _name;
                     },
                     Err(e) => {
+                        let _ = self.read_close_and_free();
                         return Err(e);
                     }
                 }
                 
                 let mut _entry_size = libarchive3_sys::archive_entry_size(entry);
                 if _entry_size < 1 {
+                    let _ = self.read_close_and_free();
                     return Err(LibArchiveError::EntrySizeLessThanOne);
                 }
 
                 let Ok(readed_data) = load_datum_from_entry(self.archive, _entry_size as usize) else {
+                    let _ = self.read_close_and_free();
                     return Err(LibArchiveError::FailedUncompress);
                 };
 
@@ -279,12 +321,14 @@ impl ArchiveExt for Archive {
                         _result.push(tmp);
                     },
                     Err(e) => {
+                        let _ = self.read_close_and_free();
                         return Err(e);
                     }
                 }
             }
         }
 
+        let _ = self.read_close_and_free();
         Ok(_result)
     }
 }

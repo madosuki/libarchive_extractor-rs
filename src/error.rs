@@ -51,6 +51,12 @@ fn generate_message(status: &LibArchiveInternalStatus) -> String {
 pub enum LibArchiveError {
     #[error("Null")]
     Null,
+    #[error("Failed free to archive")]
+    FailedFreeArchive,
+    #[error("Failed close to read archive")]
+    FailedCloseReadArchive,
+    #[error("Failed free to read archive")]
+    FailedFreeReadArchive,
     #[error("Failed create archive entry")]
     FailedCreateArchiveEntry,
     #[error("Failed create archive")]
