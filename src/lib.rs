@@ -2,10 +2,13 @@ use libarchive3_sys_by_madosuki as libarchive3_sys;
 use libarchive3_sys::{ArchiveStruct, ArchiveEntryStruct};
 
 use std::io::prelude::Write;
-use std::ffi::c_char;
-use std::ffi::c_void;
+use libc::{ c_char, c_void, size_t};
 mod error;
 use error::{LibArchiveError, LibArchiveResult, LibArchiveInternalStatus};
+
+fn entry_free(entry: *mut ArchiveEntryStruct) {
+    unsafe { libarchive3_sys::archive_entry_free(entry); }
+}
 
 fn convert_c_char_to_string(data: *const c_char) -> Option<String> {
     if data.is_null() {
@@ -35,6 +38,28 @@ fn get_pathname_from_entry(entry: *mut ArchiveEntryStruct) -> LibArchiveResult<S
     }
 }
 
+fn load_and_write_datum_from_entry(archive: *mut ArchiveStruct, archive_write: *mut ArchiveStruct) {
+    let mut offset = 0 as i64;
+
+    loop {
+        let buf: *mut c_void = std::ptr::null_mut();
+        
+        let mut _readed_size = 0 as size_t;
+        let _r = unsafe { libarchive3_sys::archive_read_data_block(archive, &buf, &mut _readed_size, &mut offset) };
+        println!("_f_size: {}", _readed_size);
+
+        if _r == 1 {
+            break;
+        }
+
+        let buf_const = buf.cast_const();
+        let _result = unsafe { libarchive3_sys::archive_write_data_blocK(archive_write, buf_const, _readed_size, offset) };
+        if _result != (libarchive3_sys::ARCHIVE_OK as isize) {
+            break;
+        }
+    }
+}
+
 fn load_datum_from_entry(archive: *mut ArchiveStruct, entry_size: usize) -> LibArchiveResult<Vec<u8>> {
     let mut offset = 0 as i64;
     let mut result: Vec<u8> = vec!();
@@ -59,17 +84,8 @@ fn load_datum_from_entry(archive: *mut ArchiveStruct, entry_size: usize) -> LibA
     Ok(result)
 }
 
-fn write_file_to_dir(dir_path: &str, file_name: &str, data: &[u8]) -> LibArchiveResult<()> {
-    let _dir_path = std::path::Path::new(dir_path);
-    let mut _r: i32 = 0;
-    if !_dir_path.exists() {
-        let _create_dir_result = std::fs::create_dir(dir_path);
-        if _create_dir_result.is_err() {
-            return Err(LibArchiveError::FailedCreateDirectory);
-        }
-    }
-
-    let _f_path_buf = _dir_path.join(file_name);
+fn write_file_to_dir(dir_path: &std::path::Path, file_name: &str, data: &[u8]) -> LibArchiveResult<()> {
+    let _f_path_buf = dir_path.join(file_name);
     let Ok(mut fp) = std::fs::File::create(&_f_path_buf) else {
         return Err(LibArchiveError::FailedCreateFile);
     };
@@ -161,6 +177,10 @@ impl ArchiveExt for Archive {
     }
 
     fn read_close_and_free(&self) -> LibArchiveResult<()> {
+        if self.archive.is_null() {
+            return Ok(());
+        }
+        
         let close_status_code = unsafe { libarchive3_sys::archive_read_close(self.archive) };
         if close_status_code != 0 {
             return Err(LibArchiveError::FailedCloseReadArchive);
@@ -253,15 +273,28 @@ impl ArchiveExt for Archive {
             }
         }
 
-        let _ = self.read_close_and_free();
+        self.read_close_and_free()?;
         Ok(_result)
     }
 
     fn read_and_write_to_specific_dir(&self, file_path: &str, target_dir_path: &str) -> LibArchiveResult<Vec<FileInfo>> {
+
+        let _f_p = std::path::Path::new(file_path);
+        if !_f_p.exists() {
+            return Err(LibArchiveError::IsNotExists);
+        }
+
+        let _dir_path = std::path::Path::new(target_dir_path);
+        if !_dir_path.exists() {
+            let _r = std::fs::create_dir(_dir_path);
+            if _r.is_err() {
+               return Err(LibArchiveError::FailedCreateDirectory); 
+            }
+        }
+        
         let Ok(_meta) = std::fs::metadata(file_path) else {
             return Err(LibArchiveError::FailedGetMetaDataFromFile);
         };
-        
         if !_meta.is_file() {
             return Err(LibArchiveError::IsNotFile);
         }
@@ -294,23 +327,23 @@ impl ArchiveExt for Archive {
                         _f_name = _name;
                     },
                     Err(e) => {
-                        let _ = self.read_close_and_free();
+                        let _ = self.read_close_and_free()?;
                         return Err(e);
                     }
                 }
                 
                 let mut _entry_size = libarchive3_sys::archive_entry_size(entry);
                 if _entry_size < 1 {
-                    let _ = self.read_close_and_free();
+                    let _ = self.read_close_and_free()?;
                     return Err(LibArchiveError::EntrySizeLessThanOne);
                 }
 
                 let Ok(readed_data) = load_datum_from_entry(self.archive, _entry_size as usize) else {
-                    let _ = self.read_close_and_free();
+                    let _ = self.read_close_and_free()?;
                     return Err(LibArchiveError::FailedUncompress);
                 };
 
-                let write_result = write_file_to_dir(target_dir_path, &_f_name, &readed_data);
+                let write_result = write_file_to_dir(_dir_path, &_f_name, &readed_data);
                 match write_result {
                     Ok(_) => {
                         let tmp = FileInfo {
@@ -321,14 +354,14 @@ impl ArchiveExt for Archive {
                         _result.push(tmp);
                     },
                     Err(e) => {
-                        let _ = self.read_close_and_free();
+                        let _ = self.read_close_and_free()?;
                         return Err(e);
                     }
                 }
             }
         }
 
-        let _ = self.read_close_and_free();
+        self.read_close_and_free()?;
         Ok(_result)
     }
 }
