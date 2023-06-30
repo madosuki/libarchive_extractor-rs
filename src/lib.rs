@@ -38,7 +38,7 @@ fn get_pathname_from_entry(entry: *mut ArchiveEntryStruct) -> LibArchiveResult<S
     }
 }
 
-fn load_and_write_datum_from_entry(archive: *mut ArchiveStruct, archive_write: *mut ArchiveStruct) {
+fn load_and_write_datum(archive: *mut ArchiveStruct, archive_write: *mut ArchiveStruct) -> LibArchiveResult<()> {
     let mut offset = 0 as i64;
 
     loop {
@@ -54,10 +54,12 @@ fn load_and_write_datum_from_entry(archive: *mut ArchiveStruct, archive_write: *
 
         let buf_const = buf.cast_const();
         let _result = unsafe { libarchive3_sys::archive_write_data_blocK(archive_write, buf_const, _readed_size, offset) };
-        if _result != (libarchive3_sys::ARCHIVE_OK as isize) {
-            break;
+        if _result == -1 {
+            return Err(LibArchiveError::FailedWriteFile);
         }
     }
+
+    Ok(())
 }
 
 fn load_datum_from_entry(archive: *mut ArchiveStruct, entry_size: usize) -> LibArchiveResult<Vec<u8>> {
@@ -128,9 +130,11 @@ pub trait ArchiveExt {
     fn init(&self) -> LibArchiveResult<()>;
     fn extract_compressed_file_to_memory(&self, file_path: &str) -> LibArchiveResult<Vec<DecompressedData>>;
     fn get_errno(&self) -> Option<i32>;
+    fn get_error_string(archive: *mut ArchiveStruct) -> Option<String>;
     fn read_and_write_to_specific_dir(&self, file_path: &str, target_dir_path: &str) -> LibArchiveResult<Vec<FileInfo>>;
     fn read_close_and_free(&self) -> LibArchiveResult<()>;
     fn free(&mut self) -> LibArchiveResult<()>;
+    fn read_and_write_using_libarchive_functions(&self, file_path: &str, target_dir_path: &str) -> LibArchiveResult<()>;
 }
 
 impl ArchiveExt for Archive {
@@ -174,6 +178,11 @@ impl ArchiveExt for Archive {
         unsafe {
             Some(libarchive3_sys::archive_errno(self.archive))
         }
+    }
+
+    fn get_error_string(archive: *mut ArchiveStruct) -> Option<String> {
+        let bytes = unsafe { libarchive3_sys::archive_error_string(archive) };
+        convert_c_char_to_string(bytes)
     }
 
     fn read_close_and_free(&self) -> LibArchiveResult<()> {
@@ -275,6 +284,52 @@ impl ArchiveExt for Archive {
 
         self.read_close_and_free()?;
         Ok(_result)
+    }
+
+    fn read_and_write_using_libarchive_functions(&self, file_path: &str, target_dir_path: &str) -> LibArchiveResult<()> {
+        let _f_p = std::path::Path::new(file_path);
+        if !_f_p.exists() {
+            return Err(LibArchiveError::IsNotExists);
+        }
+
+        let _dir_path = std::path::Path::new(target_dir_path);
+        if !_dir_path.exists() {
+            let _r = std::fs::create_dir(_dir_path);
+            if _r.is_err() {
+               return Err(LibArchiveError::FailedCreateDirectory); 
+            }
+        }
+        
+        let Ok(_meta) = std::fs::metadata(file_path) else {
+            return Err(LibArchiveError::FailedGetMetaDataFromFile);
+        };
+        if !_meta.is_file() {
+            return Err(LibArchiveError::IsNotFile);
+        }
+
+        let Ok(_file_path_cstr) = std::ffi::CString::new(file_path) else {
+            return Err(LibArchiveError::NulError);
+        };
+
+        let _f_size = _meta.len() as usize;
+
+        unsafe {
+            let _status_code = libarchive3_sys::archive_read_open_filename(self.archive, _file_path_cstr.as_ptr(), _f_size);
+            if _status_code != 0 {
+                return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(_status_code)));
+            }
+        };
+
+        let mut entry: *mut ArchiveEntryStruct = unsafe { libarchive3_sys::archive_entry_new() };
+        if entry.is_null() {
+            let _ = self.read_close_and_free();
+            return Err(LibArchiveError::FailedCreateArchiveEntry);
+        }
+
+        let w = unsafe { libarchive3_sys::archive_write_disk_new() };
+        let _ = load_and_write_datum(self.archive, w)?;
+
+        Ok(())
     }
 
     fn read_and_write_to_specific_dir(&self, file_path: &str, target_dir_path: &str) -> LibArchiveResult<Vec<FileInfo>> {
