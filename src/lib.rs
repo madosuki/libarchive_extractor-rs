@@ -52,8 +52,7 @@ fn load_and_write_datum(archive: *mut ArchiveStruct, archive_write: *mut Archive
             break;
         }
 
-        let buf_const = buf.cast_const();
-        let _result = unsafe { libarchive3_sys::archive_write_data_blocK(archive_write, buf_const, _readed_size, offset) };
+        let _result = unsafe { libarchive3_sys::archive_write_data_block(archive_write, buf as *const c_void, _readed_size, offset) };
         if _result == -1 {
             return Err(LibArchiveError::FailedWriteFile);
         }
@@ -327,7 +326,42 @@ impl ArchiveExt for Archive {
         }
 
         let w = unsafe { libarchive3_sys::archive_write_disk_new() };
-        let _ = load_and_write_datum(self.archive, w)?;
+        let flags = libarchive3_sys::ARCHIVE_EXTRACT_TIME
+            | libarchive3_sys::ARCHIVE_EXTRACT_PERM
+            | libarchive3_sys::ARCHIVE_EXTRACT_ACL
+            | libarchive3_sys::ARCHIVE_EXTRACT_FFLAGS;
+        unsafe {
+            libarchive3_sys::archive_write_disk_set_options(w, flags);
+            libarchive3_sys::archive_write_disk_set_standard_lookup(w);
+        }
+
+        unsafe {
+            while libarchive3_sys::archive_read_next_header(self.archive, &mut entry) != 1 {
+                let mut _f_name = std::string::String::new();
+                match get_pathname_from_entry(entry) {
+                    Ok(_name) => {
+                        _f_name = _name;
+                    },
+                    Err(e) => {
+                        let _ = self.read_close_and_free()?;
+                        return Err(e);
+                    }
+                }
+                
+                let mut _entry_size = libarchive3_sys::archive_entry_size(entry);
+                if _entry_size < 1 {
+                    let _ = self.read_close_and_free()?;
+                    return Err(LibArchiveError::EntrySizeLessThanOne);
+                }
+
+                load_and_write_datum(self.archive, w)?;
+                let _ = unsafe {
+                    libarchive3_sys::archive_write_finish_entry(w)
+                };
+            }
+        }
+
+
 
         Ok(())
     }
