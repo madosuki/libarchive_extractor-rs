@@ -38,7 +38,7 @@ fn get_pathname_from_entry(entry: *mut ArchiveEntryStruct) -> LibArchiveResult<S
     }
 }
 
-fn load_and_write_datum(archive: *mut ArchiveStruct, archive_write: *mut ArchiveStruct) -> LibArchiveResult<()> {
+fn read_and_write_data(archive: *mut ArchiveStruct, archive_write: *mut ArchiveStruct) -> LibArchiveResult<()> {
     let mut offset = 0 as i64;
 
     loop {
@@ -59,7 +59,7 @@ fn load_and_write_datum(archive: *mut ArchiveStruct, archive_write: *mut Archive
     Ok(())
 }
 
-fn load_datum_from_entry(archive: *mut ArchiveStruct, entry_size: usize) -> LibArchiveResult<Vec<u8>> {
+fn read_data(archive: *mut ArchiveStruct) -> LibArchiveResult<Vec<u8>> {
     let mut offset = 0 as i64;
     let mut result: Vec<u8> = vec!();
 
@@ -125,7 +125,7 @@ pub struct Archive {
 pub trait ArchiveExt {
     fn new() -> LibArchiveResult<Archive>;
     fn init(&self) -> LibArchiveResult<()>;
-    fn extract_compressed_file_to_memory(&self, file_path: &str) -> LibArchiveResult<Vec<DecompressedData>>;
+    fn extract_to_memory(&self, file_path: &str) -> LibArchiveResult<Vec<DecompressedData>>;
     fn get_errno(&self) -> Option<i32>;
     fn get_error_string(archive: *mut ArchiveStruct) -> Option<String>;
     fn read_close_and_free(&self) -> LibArchiveResult<()>;
@@ -199,7 +199,7 @@ impl ArchiveExt for Archive {
         Ok(())
     }
 
-    fn extract_compressed_file_to_memory(&self, file_path: &str) -> LibArchiveResult<Vec<DecompressedData>> {
+    fn extract_to_memory(&self, file_path: &str) -> LibArchiveResult<Vec<DecompressedData>> {
         let Ok(_meta) = std::fs::metadata(file_path) else {
             return Err(LibArchiveError::FailedGetMetaDataFromFile);
         };
@@ -260,7 +260,7 @@ impl ArchiveExt for Archive {
                     return Err(LibArchiveError::EntrySizeLessThanOne);
                 }
 
-                let Ok(readed_data) = load_datum_from_entry(self.archive, _entry_size as usize) else {
+                let Ok(readed_data) = read_data(self.archive) else {
                     let _ = self.read_close_and_free();
                     return Err(LibArchiveError::FailedUncompress);
                 };
@@ -361,7 +361,7 @@ impl ArchiveExt for Archive {
                     continue;
                 }
 
-                load_and_write_datum(self.archive, w)?;
+                read_and_write_data(self.archive, w)?;
                 let _ = libarchive3_sys::archive_write_finish_entry(w);
 
                 let _file_info = FileInfo {
