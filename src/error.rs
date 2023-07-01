@@ -81,6 +81,8 @@ pub enum LibArchiveError {
     FailedGetMetaDataFromFile,
     #[error("Failed get metadata from dir")]
     FailedGetMetaDataFromDir,
+    #[error("Failed write header")]
+    FailedWriteHeader,
     #[error("is not file")]
     IsNotFile,
     #[error("is not dir")]

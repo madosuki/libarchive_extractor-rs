@@ -86,13 +86,8 @@ fn read_data(archive: *mut ArchiveStruct) -> LibArchiveResult<Vec<u8>> {
 pub struct FileInfo {
     pub file_name: String,
     pub size: usize,
-}
-
-#[derive(Debug)]
-pub struct ReadAndWriteResult<T> {
-    pub value: Option<T>,
-    pub code: i32,
-    pub is_success: bool
+    pub is_success: bool,
+    pub error: Option<LibArchiveError>,
 }
 
 #[derive(Debug)]
@@ -334,37 +329,94 @@ impl ArchiveExt for Archive {
                         _f_name = _name;
                     },
                     Err(e) => {
-                        let _ = self.read_close_and_free()?;
-                        return Err(e);
+                        let _ = self.read_close_and_free();
+                        let _file_info = FileInfo {
+                            file_name: "".to_owned(),
+                            size: 0,
+                            is_success: false,
+                            error: Some(e),
+                        };
+                        _result.push(_file_info);
+
+                        continue;
                     }
                 }
 
                 let _out_path = _dir_path.join(&_f_name);
                 let Some(_p) = _out_path.as_path().to_str() else {
-                    return Err(LibArchiveError::FailedGeneratePath);
+                    let _file_info = FileInfo {
+                        file_name: _f_name,
+                        size: 0,
+                        is_success: false,
+                        error: Some(LibArchiveError::FailedGeneratePath),
+                    };
+                    _result.push(_file_info);
+                    
+                    continue;
                 };
                 let Ok(_path_with_terminate) = std::ffi::CString::new(_p) else {
-                    return Err(LibArchiveError::FailedGeneratePath);
+                    let _file_info = FileInfo {
+                        file_name: _f_name,
+                        size: 0,
+                        is_success: false,
+                        error: Some(LibArchiveError::FailedGeneratePath),
+                    };
+                    _result.push(_file_info);
+                    
+                    continue;
                 };
 
-                let _ = libarchive3_sys::archive_entry_set_pathname_utf8(entry, _path_with_terminate.as_ptr());
-                let _ = libarchive3_sys::archive_write_header(write_disk, entry);
+                libarchive3_sys::archive_entry_set_pathname_utf8(entry, _path_with_terminate.as_ptr());
+                let _status_code = libarchive3_sys::archive_write_header(write_disk, entry);
+                if _status_code != 0 {
+                    let _ = libarchive3_sys::archive_write_finish_entry(write_disk);
+                    
+                    let _file_info = FileInfo {
+                        file_name: _f_name,
+                        size: 0,
+                        is_success: false,
+                        error: Some(LibArchiveError::FailedWriteHeader),
+                    };
+                    _result.push(_file_info);
+
+                    continue;
+                }
                 
                 let mut _entry_size = libarchive3_sys::archive_entry_size(entry);
                 if _entry_size < 1 {
                     let _ = libarchive3_sys::archive_write_finish_entry(write_disk);
+                    
+                    let _file_info = FileInfo {
+                        file_name: _f_name,
+                        size: _entry_size as usize,
+                        is_success: false,
+                        error: Some(LibArchiveError::EntrySizeLessThanOne),
+                    };
+                    _result.push(_file_info);
+
                     continue;
                 }
 
-                read_and_write_data(self.archive, write_disk)?;
+                let _write_error = match read_and_write_data(self.archive, write_disk) {
+                    Ok(_) => {
+                        None
+                    },
+                    Err(e) => {
+                        Some(e)
+                    }
+                };
+                
                 let _ = libarchive3_sys::archive_write_finish_entry(write_disk);
-
+                
                 let _file_info = FileInfo {
                     file_name: _f_name,
-                    size: _entry_size as usize
+                    size: _entry_size as usize,
+                    is_success: true,
+                    error: _write_error,
                 };
-
+                        
                 _result.push(_file_info);
+
             }
         }
 
