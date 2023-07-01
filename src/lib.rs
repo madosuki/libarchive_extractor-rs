@@ -1,8 +1,7 @@
 use libarchive3_sys_by_madosuki as libarchive3_sys;
 use libarchive3_sys::{ArchiveStruct, ArchiveEntryStruct};
 
-use std::io::prelude::Write;
-use libc::{ c_char, c_void, size_t};
+use libc::{ c_int, c_char, c_void, size_t};
 mod error;
 use error::{LibArchiveError, LibArchiveResult, LibArchiveInternalStatus};
 
@@ -90,6 +89,13 @@ pub struct FileInfo {
 }
 
 #[derive(Debug)]
+pub struct ReadAndWriteResult<T> {
+    pub value: Option<T>,
+    pub code: i32,
+    pub is_success: bool
+}
+
+#[derive(Debug)]
 pub struct DecompressedData {
     pub file_info: FileInfo,
     pub data: Vec<u8>,
@@ -107,7 +113,7 @@ pub trait ArchiveExt {
     fn get_error_string(archive: *mut ArchiveStruct) -> Option<String>;
     fn read_close_and_free(&self) -> LibArchiveResult<()>;
     fn free(&mut self) -> LibArchiveResult<()>;
-    fn extract_to_dir(&self, file_path: &str, target_dir_path: &str) -> LibArchiveResult<Vec<FileInfo>>;
+    fn extract_to_dir(&self, file_path: &str, target_dir_path: &str, flags: Option<i32>) -> LibArchiveResult<Vec<FileInfo>>;
 }
 
 impl ArchiveExt for Archive {
@@ -259,7 +265,7 @@ impl ArchiveExt for Archive {
         Ok(_result)
     }
 
-    fn extract_to_dir(&self, file_path: &str, target_dir_path: &str) -> LibArchiveResult<Vec<FileInfo>> {
+    fn extract_to_dir(&self, file_path: &str, target_dir_path: &str, flags: Option<i32>) -> LibArchiveResult<Vec<FileInfo>> {
         let _f_p = std::path::Path::new(file_path);
         if !_f_p.exists() {
             return Err(LibArchiveError::IsNotExists);
@@ -302,19 +308,26 @@ impl ArchiveExt for Archive {
             return Err(LibArchiveError::FailedCreateArchiveEntry);
         }
 
-        let w = unsafe { libarchive3_sys::archive_write_disk_new() };
-        let flags = libarchive3_sys::ARCHIVE_EXTRACT_TIME
-            | libarchive3_sys::ARCHIVE_EXTRACT_PERM
-            | libarchive3_sys::ARCHIVE_EXTRACT_ACL
-            | libarchive3_sys::ARCHIVE_EXTRACT_FFLAGS;
+        let write_disk = unsafe { libarchive3_sys::archive_write_disk_new() };
+        let _flags: c_int = match flags {
+            Some(v) => v,
+            _ => {
+                libarchive3_sys::ARCHIVE_EXTRACT_TIME
+                    | libarchive3_sys::ARCHIVE_EXTRACT_PERM
+                    | libarchive3_sys::ARCHIVE_EXTRACT_ACL
+                    | libarchive3_sys::ARCHIVE_EXTRACT_FFLAGS
+            }
+        };
+        
         unsafe {
-            libarchive3_sys::archive_write_disk_set_options(w, flags);
-            libarchive3_sys::archive_write_disk_set_standard_lookup(w);
+            libarchive3_sys::archive_write_disk_set_options(write_disk, _flags);
+            libarchive3_sys::archive_write_disk_set_standard_lookup(write_disk);
         }
 
-        let mut _file_info_list: Vec<FileInfo> = vec!();
+        let mut _result: Vec<FileInfo> = vec!();
         unsafe {
             while libarchive3_sys::archive_read_next_header(self.archive, &mut entry) != 1 {
+                let mut _status_code = 0;
                 let mut _f_name = std::string::String::new();
                 match get_pathname_from_entry(entry) {
                     Ok(_name) => {
@@ -335,37 +348,37 @@ impl ArchiveExt for Archive {
                 };
 
                 let _ = libarchive3_sys::archive_entry_set_pathname_utf8(entry, _path_with_terminate.as_ptr());
-                let _ = libarchive3_sys::archive_write_header(w, entry);
+                let _ = libarchive3_sys::archive_write_header(write_disk, entry);
                 
                 let mut _entry_size = libarchive3_sys::archive_entry_size(entry);
                 if _entry_size < 1 {
-                    let _ = libarchive3_sys::archive_write_finish_entry(w);
+                    let _ = libarchive3_sys::archive_write_finish_entry(write_disk);
                     continue;
                 }
 
-                read_and_write_data(self.archive, w)?;
-                let _ = libarchive3_sys::archive_write_finish_entry(w);
+                read_and_write_data(self.archive, write_disk)?;
+                let _ = libarchive3_sys::archive_write_finish_entry(write_disk);
 
                 let _file_info = FileInfo {
                     file_name: _f_name,
                     size: _entry_size as usize
                 };
 
-                _file_info_list.push(_file_info);
+                _result.push(_file_info);
             }
         }
 
-        let mut status = unsafe { libarchive3_sys::archive_write_close(w) };
+        let mut status = unsafe { libarchive3_sys::archive_write_close(write_disk) };
         if status != 0 {
             return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(status)));
         }
-        status = unsafe { libarchive3_sys::archive_write_free(w) };
+        status = unsafe { libarchive3_sys::archive_write_free(write_disk) };
         if status != 0 {
             return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(status)));
         }
 
 
-        Ok(_file_info_list)
+        Ok(_result)
     }
 
 }
