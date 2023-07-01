@@ -53,6 +53,8 @@ pub enum LibArchiveError {
     Null,
     #[error("Failed free to archive")]
     FailedFreeArchive,
+    #[error("Failed generate path")]
+    FailedGeneratePath,
     #[error("Failed close to read archive")]
     FailedCloseReadArchive,
     #[error("Failed free to read archive")]

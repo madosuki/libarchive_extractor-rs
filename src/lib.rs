@@ -83,29 +83,6 @@ fn read_data(archive: *mut ArchiveStruct) -> LibArchiveResult<Vec<u8>> {
     Ok(result)
 }
 
-fn write_file_to_dir(dir_path: &std::path::Path, file_name: &str, data: &[u8]) -> LibArchiveResult<()> {
-    let _f_path_buf = dir_path.join(file_name);
-    let Ok(mut fp) = std::fs::File::create(&_f_path_buf) else {
-        return Err(LibArchiveError::FailedCreateFile);
-    };
-    
-    match fp.write_all(&data) {
-        Ok(_) => {
-            match fp.flush() {
-                Ok(_) => Ok(()),
-                _ => {
-                    return Err(LibArchiveError::FailedFlushWhenWrite);
-                }
-            }
-        },
-        Err(_) => {
-            return Err(LibArchiveError::FailedWriteFile);
-        }
-    }
-
-}
-
-
 #[derive(Debug)]
 pub struct FileInfo {
     pub file_name: String,
@@ -350,9 +327,14 @@ impl ArchiveExt for Archive {
                 }
 
                 let _out_path = _dir_path.join(&_f_name);
-                let _p = _out_path.as_path().to_str().unwrap().as_ptr();
+                let Some(_p) = _out_path.as_path().to_str() else {
+                    return Err(LibArchiveError::FailedGeneratePath);
+                };
+                let Ok(_path_with_terminate) = std::ffi::CString::new(_p) else {
+                    return Err(LibArchiveError::FailedGeneratePath);
+                };
 
-                let _ = libarchive3_sys::archive_entry_set_pathname_utf8(entry, _p as *const i8);
+                let _ = libarchive3_sys::archive_entry_set_pathname_utf8(entry, _path_with_terminate.as_ptr());
                 let _ = libarchive3_sys::archive_write_header(w, entry);
                 
                 let mut _entry_size = libarchive3_sys::archive_entry_size(entry);
