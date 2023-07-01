@@ -46,14 +46,12 @@ fn load_and_write_datum(archive: *mut ArchiveStruct, archive_write: *mut Archive
         
         let mut _readed_size = 0 as size_t;
         let _r = unsafe { libarchive3_sys::archive_read_data_block(archive, &buf, &mut _readed_size, &mut offset) };
-        println!("_f_size: {}", _readed_size);
-
         if _r == 1 {
             break;
         }
 
-        let _result = unsafe { libarchive3_sys::archive_write_data_block(archive_write, buf as *const c_void, _readed_size, offset) };
-        if _result == -1 {
+        let _write_dta_block_result = unsafe { libarchive3_sys::archive_write_data_block(archive_write, buf as *const c_void, _readed_size, offset) };
+        if _write_dta_block_result == -1 {
             return Err(LibArchiveError::FailedWriteFile);
         }
     }
