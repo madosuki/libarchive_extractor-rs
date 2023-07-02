@@ -92,8 +92,8 @@ pub struct FileInfo {
 
 #[derive(Debug)]
 pub struct DecompressedData {
-    pub file_info: FileInfo,
-    pub data: Vec<u8>,
+    value: Vec<u8>,
+    file_info: FileInfo,
 }
 
 pub struct Archive {
@@ -218,7 +218,21 @@ impl ArchiveExt for Archive {
                 let _pathname = libarchive3_sys::archive_entry_pathname(entry);
                 if _pathname.is_null() {
                     let _ = self.read_close_and_free();
-                    return Err(LibArchiveError::FailedGetPathNameFromEntry);
+
+                    let file_info = FileInfo {
+                        file_name: "".to_owned(),
+                        size: 0,
+                        is_success: false,
+                        error: Some(LibArchiveError::FailedGetPathNameFromEntry),
+                    };
+
+                    let _decompress_data = DecompressedData {
+                        file_info,
+                        value: vec!(),
+                    };
+                    _result.push(_decompress_data);
+                    
+                    continue;
                 }
 
                 let mut _f_name = std::string::String::new();
@@ -228,35 +242,77 @@ impl ArchiveExt for Archive {
                     },
                     _ => {
                         let _ = self.read_close_and_free();
-                        return Err(LibArchiveError::FailedGetPathNameFromEntry);
+                        let file_info = FileInfo {
+                            file_name: "".to_owned(),
+                            size: 0,
+                            is_success: false,
+                            error: Some(LibArchiveError::FailedGetPathNameFromEntry),
+                        };
+
+                        let _decompress_data = DecompressedData {
+                            file_info,
+                            value: vec!(),
+                        };
+                        _result.push(_decompress_data);
+
+                        continue;
                     },
                 }
                 
                 let mut _entry_size = libarchive3_sys::archive_entry_size(entry);
                 if _entry_size < 1 {
                     let _ = self.read_close_and_free();
-                    return Err(LibArchiveError::EntrySizeLessThanOne);
+                    
+                    let file_info = FileInfo {
+                        file_name: _f_name,
+                        size: 0,
+                        is_success: false,
+                        error: Some(LibArchiveError::EntrySizeLessThanOne),
+                    };
+
+                    let _decompress_data = DecompressedData {
+                        file_info,
+                        value: vec!(),
+                    };
+                    _result.push(_decompress_data);
+                    
+                    continue;
                 }
 
                 let Ok(readed_data) = read_data(self.archive) else {
                     let _ = self.read_close_and_free();
-                    return Err(LibArchiveError::FailedUncompress);
+
+                    let file_info = FileInfo {
+                        file_name: _f_name,
+                        size: 0,
+                        is_success: false,
+                        error: Some(LibArchiveError::FailedUncompress),
+                    };
+
+                    let _decompress_data = DecompressedData {
+                        file_info,
+                        value: vec!(),
+                    };
+                    _result.push(_decompress_data);
+                    
+                    continue;
                 };
 
                 let file_info = FileInfo {
                     file_name: _f_name,
                     size: _entry_size as usize,
+                    is_success: true,
+                    error: None,
                 };
 
                 let tmp = DecompressedData {
                     file_info,
-                    data: readed_data,
+                    value: readed_data,
                 };
                 _result.push(tmp);
             }
         }
 
-        self.read_close_and_free()?;
         Ok(_result)
     }
 
