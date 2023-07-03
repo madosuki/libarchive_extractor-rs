@@ -92,8 +92,8 @@ pub struct FileInfo {
 
 #[derive(Debug)]
 pub struct DecompressedData {
-    value: Vec<u8>,
-    file_info: FileInfo,
+    pub value: Vec<u8>,
+    pub file_info: FileInfo,
 }
 
 pub struct Archive {
