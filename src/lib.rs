@@ -3,7 +3,7 @@ use libarchive3_sys::{ArchiveStruct, ArchiveEntryStruct};
 
 use libc::{ c_int, c_char, c_void, size_t};
 mod error;
-use error::{LibArchiveError, LibArchiveResult, LibArchiveInternalStatus};
+pub use error::{LibArchiveError, LibArchiveResult, LibArchiveInternalStatus};
 
 fn entry_free(entry: *mut ArchiveEntryStruct) {
     unsafe { libarchive3_sys::archive_entry_free(entry); }
@@ -484,7 +484,6 @@ impl ArchiveExt for Archive {
         if status != 0 {
             return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(status)));
         }
-
 
         Ok(_result)
     }
