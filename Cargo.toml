@@ -1,5 +1,5 @@
 [package]
-name = "libarchive_extractor"
+name = "libarchive_extractor-rs"
 version = "0.1.0"
 edition = "2021"
 
