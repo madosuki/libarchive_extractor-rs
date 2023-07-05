@@ -1,8 +1,8 @@
 use libarchive3_sys_by_madosuki as libarchive3_sys;
-use libarchive3_sys::{ArchiveStruct, ArchiveEntryStruct};
+pub use libarchive3_sys::{ArchiveStruct, ArchiveEntryStruct};
 
 use libc::{ c_int, c_char, c_void, size_t};
-mod error;
+pub mod error;
 pub use error::{LibArchiveError, LibArchiveResult, LibArchiveInternalStatus};
 
 fn entry_free(entry: *mut ArchiveEntryStruct) {
