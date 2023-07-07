@@ -17,7 +17,7 @@ pub enum LibArchiveInternalStatus {
 impl std::fmt::Display for LibArchiveInternalStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let msg = generate_message(self);
-        writeln!(f, "Status: {}", msg)
+        writeln!(f, "{}", msg)
     }
 }
 
