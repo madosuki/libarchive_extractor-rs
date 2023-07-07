@@ -200,17 +200,16 @@ impl ArchiveExt for Archive {
         };
 
         let mut entry: *mut ArchiveEntryStruct = unsafe { libarchive3_sys::archive_entry_new() };
-        if entry.is_null() {
-            match self.read_close_and_free() {
-                Ok(_) => {
-                    return Err(LibArchiveError::FailedCreateArchiveEntry);
-                },
-                Err(e) => {
-                    return Err(e);
-                }
-            }
-
-        }
+        // if entry.is_null() {
+        //     match self.read_close_and_free() {
+        //         Ok(_) => {
+        //             return Err(LibArchiveError::FailedCreateArchiveEntry);
+        //         },
+        //         Err(e) => {
+        //             return Err(e);
+        //         }
+        //     }
+        // }
 
         let mut _result: Vec<DecompressedData> = vec!();
         unsafe {
