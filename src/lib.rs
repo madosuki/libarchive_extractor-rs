@@ -9,6 +9,20 @@ pub use error::{LibArchiveError, LibArchiveResult, LibArchiveInternalStatus};
 //     unsafe { libarchive3_sys::archive_entry_free(entry); }
 // }
 
+fn set_all_filter_and_format(_archive: *mut ArchiveStruct) -> LibArchiveResult<()> {
+    let _read_support_filter_all_result = unsafe { libarchive3_sys::archive_read_support_filter_all(_archive) };
+    if _read_support_filter_all_result != 0 {
+        return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(_read_support_filter_all_result)));
+    }
+
+    let _read_support_format_all_result = unsafe { libarchive3_sys::archive_read_support_format_all(_archive) };
+    if _read_support_format_all_result != 0 {
+        return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(_read_support_format_all_result)));
+    }
+    
+    Ok(())
+}
+
 fn convert_c_char_to_string(data: *const c_char) -> Option<String> {
     if data.is_null() {
         return None;
@@ -82,6 +96,32 @@ fn read_data(archive: *mut ArchiveStruct) -> LibArchiveResult<Vec<u8>> {
     Ok(result)
 }
 
+fn read_free(mut _archive: *mut ArchiveStruct) -> LibArchiveResult<()> {
+    let status_code = unsafe { libarchive3_sys::archive_free(_archive) };
+    if status_code != 0 {
+        return Err(LibArchiveError::FailedFreeArchive);
+    }
+    _archive = std::ptr::null_mut();
+    Ok(())
+}
+
+fn read_close_and_free(mut _read_archive: *mut ArchiveStruct) -> LibArchiveResult<()> {
+    if _read_archive.is_null() {
+        return Ok(());
+    }
+        
+    let close_status_code = unsafe { libarchive3_sys::archive_read_close(_read_archive) };
+    if close_status_code != 0 {
+        return Err(LibArchiveError::FailedCloseReadArchive);
+    }
+
+    read_free(_read_archive)?;
+
+    Ok(())
+}
+
+
+
 #[derive(Debug)]
 pub struct FileInfo {
     pub file_name: String,
@@ -96,18 +136,13 @@ pub struct DecompressedData {
     pub file_info: FileInfo,
 }
 
-pub struct Archive {
-    archive: *mut libarchive3_sys_by_madosuki::ArchiveStruct,
-}
+pub struct Archive;
 
 pub trait ArchiveExt {
     fn new() -> LibArchiveResult<Archive>;
-    fn init(&self) -> LibArchiveResult<()>;
     fn extract_to_memory(&self, file_path: &str) -> LibArchiveResult<Vec<DecompressedData>>;
-    fn get_errno(&self) -> Option<i32>;
+    fn get_errno(&self, archive: *mut ArchiveStruct) -> Option<i32>;
     fn get_error_string(archive: *mut ArchiveStruct) -> Option<String>;
-    fn read_close_and_free(&self, _read_archive: *mut ArchiveStruct) -> LibArchiveResult<()>;
-    fn free(&mut self) -> LibArchiveResult<()>;
     fn extract_to_dir(&self, file_path: &str, target_dir_path: &str, flags: Option<i32>) -> LibArchiveResult<Vec<FileInfo>>;
 }
 
@@ -117,40 +152,18 @@ impl ArchiveExt for Archive {
         if archive.is_null() {
             Err(LibArchiveError::FailedCreateArchive)
         } else {
-            Ok(Archive { archive })
+            Ok(Archive)
         }
     }
 
-    fn free(&mut self) -> LibArchiveResult<()> {
-        let status_code = unsafe { libarchive3_sys::archive_free(self.archive) };
-        if status_code != 0 {
-            return Err(LibArchiveError::FailedFreeArchive);
-        }
-        self.archive = std::ptr::null_mut();
-        Ok(())
-    }
 
-    fn init(&self) -> LibArchiveResult<()> {
-        let mut _r = unsafe { libarchive3_sys::archive_read_support_filter_all(self.archive) };
-        if _r != 0 {
-            return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(_r)));
-        }
-
-        _r = unsafe { libarchive3_sys::archive_read_support_format_all(self.archive) };
-        if _r != 0 {
-            return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(_r)));
-        }
-
-        Ok(())
-    }
-
-    fn get_errno(&self) -> Option<i32> {
-        if self.archive.is_null() {
+    fn get_errno(&self, archive: *mut ArchiveStruct) -> Option<i32> {
+        if archive.is_null() {
             return None;
         }
         
         unsafe {
-            Some(libarchive3_sys::archive_errno(self.archive))
+            Some(libarchive3_sys::archive_errno(archive))
         }
     }
 
@@ -159,23 +172,6 @@ impl ArchiveExt for Archive {
         convert_c_char_to_string(bytes)
     }
 
-    fn read_close_and_free(&self, _read_archive: *mut ArchiveStruct) -> LibArchiveResult<()> {
-        if _read_archive.is_null() {
-            return Ok(());
-        }
-        
-        let close_status_code = unsafe { libarchive3_sys::archive_read_close(_read_archive) };
-        if close_status_code != 0 {
-            return Err(LibArchiveError::FailedCloseReadArchive);
-        }
-
-        let free_status_code = unsafe { libarchive3_sys::archive_read_free(_read_archive) };
-        if free_status_code != 0 {
-            return Err(LibArchiveError::FailedFreeReadArchive);
-        }
-
-        Ok(())
-    }
 
     fn extract_to_memory(&self, file_path: &str) -> LibArchiveResult<Vec<DecompressedData>> {
         let Ok(_meta) = std::fs::metadata(file_path) else {
@@ -190,22 +186,33 @@ impl ArchiveExt for Archive {
             return Err(LibArchiveError::NulError);
         };
 
-        let _f_size = _meta.len() as usize;
-        unsafe {
-            let _status_code = libarchive3_sys::archive_read_open_filename(self.archive, _file_path_cstr.as_ptr(), _f_size);
-            if _status_code != 0 {
-                return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(_status_code)));
-            }
-        };
 
         let mut _archive: *mut ArchiveStruct = unsafe { libarchive3_sys::archive_read_new() };
         if _archive.is_null() {
             return Err(LibArchiveError::FailedCreateArchive);
         }
+
+        let mut _r = unsafe { libarchive3_sys::archive_read_support_filter_all(_archive) };
+        if _r != 0 {
+            return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(_r)));
+        }
+
+        _r = unsafe { libarchive3_sys::archive_read_support_format_all(_archive) };
+        if _r != 0 {
+            return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(_r)));
+        }
+
+        let _f_size = _meta.len() as usize;
+        unsafe {
+            let _status_code = libarchive3_sys::archive_read_open_filename(_archive, _file_path_cstr.as_ptr(), _f_size);
+            if _status_code != 0 {
+                return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(_status_code)));
+            }
+        };
         
         let mut entry: *mut ArchiveEntryStruct = unsafe { libarchive3_sys::archive_entry_new() };
         if entry.is_null() {
-            match self.read_close_and_free(_archive) {
+            match read_close_and_free(_archive) {
                 Ok(_) => {
                     return Err(LibArchiveError::FailedCreateArchiveEntry);
                 },
@@ -309,7 +316,7 @@ impl ArchiveExt for Archive {
             }
         }
 
-        let _ = self.read_close_and_free(_archive);
+        let _ = read_close_and_free(_archive);
         Ok(_result)
     }
 
@@ -357,7 +364,7 @@ impl ArchiveExt for Archive {
 
         let mut entry: *mut ArchiveEntryStruct = unsafe { libarchive3_sys::archive_entry_new() };
         if entry.is_null() {
-            let _ = self.read_close_and_free(_archive);
+            let _ = read_close_and_free(_archive);
             return Err(LibArchiveError::FailedCreateArchiveEntry);
         }
 
@@ -387,7 +394,6 @@ impl ArchiveExt for Archive {
                         _f_name = _name;
                     },
                     Err(e) => {
-                        let _ = self.read_close_and_free(_archive);
                         let _file_info = FileInfo {
                             file_name: "".to_owned(),
                             size: 0,
@@ -487,7 +493,7 @@ impl ArchiveExt for Archive {
             return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(status)));
         }
 
-        let _ = self.read_close_and_free(_archive);
+        let _ = read_close_and_free(_archive);
 
         Ok(_result)
     }
