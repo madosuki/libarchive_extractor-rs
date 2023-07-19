@@ -5,9 +5,9 @@ use libc::{ c_int, c_char, c_void, size_t};
 pub mod error;
 pub use error::{LibArchiveError, LibArchiveResult, LibArchiveInternalStatus};
 
-fn entry_free(entry: *mut ArchiveEntryStruct) {
-    unsafe { libarchive3_sys::archive_entry_free(entry); }
-}
+// fn entry_free(entry: *mut ArchiveEntryStruct) {
+//     unsafe { libarchive3_sys::archive_entry_free(entry); }
+// }
 
 fn convert_c_char_to_string(data: *const c_char) -> Option<String> {
     if data.is_null() {
@@ -106,7 +106,7 @@ pub trait ArchiveExt {
     fn extract_to_memory(&self, file_path: &str) -> LibArchiveResult<Vec<DecompressedData>>;
     fn get_errno(&self) -> Option<i32>;
     fn get_error_string(archive: *mut ArchiveStruct) -> Option<String>;
-    fn read_close_and_free(&self) -> LibArchiveResult<()>;
+    fn read_close_and_free(&self, _read_archive: *mut ArchiveStruct) -> LibArchiveResult<()>;
     fn free(&mut self) -> LibArchiveResult<()>;
     fn extract_to_dir(&self, file_path: &str, target_dir_path: &str, flags: Option<i32>) -> LibArchiveResult<Vec<FileInfo>>;
 }
@@ -159,17 +159,17 @@ impl ArchiveExt for Archive {
         convert_c_char_to_string(bytes)
     }
 
-    fn read_close_and_free(&self) -> LibArchiveResult<()> {
-        if self.archive.is_null() {
+    fn read_close_and_free(&self, _read_archive: *mut ArchiveStruct) -> LibArchiveResult<()> {
+        if _read_archive.is_null() {
             return Ok(());
         }
         
-        let close_status_code = unsafe { libarchive3_sys::archive_read_close(self.archive) };
+        let close_status_code = unsafe { libarchive3_sys::archive_read_close(_read_archive) };
         if close_status_code != 0 {
             return Err(LibArchiveError::FailedCloseReadArchive);
         }
 
-        let free_status_code = unsafe { libarchive3_sys::archive_read_free(self.archive) };
+        let free_status_code = unsafe { libarchive3_sys::archive_read_free(_read_archive) };
         if free_status_code != 0 {
             return Err(LibArchiveError::FailedFreeReadArchive);
         }
@@ -191,7 +191,6 @@ impl ArchiveExt for Archive {
         };
 
         let _f_size = _meta.len() as usize;
-        
         unsafe {
             let _status_code = libarchive3_sys::archive_read_open_filename(self.archive, _file_path_cstr.as_ptr(), _f_size);
             if _status_code != 0 {
@@ -199,25 +198,28 @@ impl ArchiveExt for Archive {
             }
         };
 
+        let mut _archive: *mut ArchiveStruct = unsafe { libarchive3_sys::archive_read_new() };
+        if _archive.is_null() {
+            return Err(LibArchiveError::FailedCreateArchive);
+        }
+        
         let mut entry: *mut ArchiveEntryStruct = unsafe { libarchive3_sys::archive_entry_new() };
-        // if entry.is_null() {
-        //     match self.read_close_and_free() {
-        //         Ok(_) => {
-        //             return Err(LibArchiveError::FailedCreateArchiveEntry);
-        //         },
-        //         Err(e) => {
-        //             return Err(e);
-        //         }
-        //     }
-        // }
+        if entry.is_null() {
+            match self.read_close_and_free(_archive) {
+                Ok(_) => {
+                    return Err(LibArchiveError::FailedCreateArchiveEntry);
+                },
+                Err(e) => {
+                    return Err(e);
+                }
+            }
+        }
 
         let mut _result: Vec<DecompressedData> = vec!();
         unsafe {
-            while libarchive3_sys::archive_read_next_header(self.archive, &mut entry) != 1 {
+            while libarchive3_sys::archive_read_next_header(_archive, &mut entry) != 1 {
                 let _pathname = libarchive3_sys::archive_entry_pathname(entry);
                 if _pathname.is_null() {
-                    let _ = self.read_close_and_free();
-
                     let file_info = FileInfo {
                         file_name: "".to_owned(),
                         size: 0,
@@ -240,7 +242,6 @@ impl ArchiveExt for Archive {
                         _f_name = _n;
                     },
                     _ => {
-                        let _ = self.read_close_and_free();
                         let file_info = FileInfo {
                             file_name: "".to_owned(),
                             size: 0,
@@ -260,8 +261,6 @@ impl ArchiveExt for Archive {
                 
                 let mut _entry_size = libarchive3_sys::archive_entry_size(entry);
                 if _entry_size < 1 {
-                    let _ = self.read_close_and_free();
-                    
                     let file_info = FileInfo {
                         file_name: _f_name,
                         size: 0,
@@ -278,9 +277,7 @@ impl ArchiveExt for Archive {
                     continue;
                 }
 
-                let Ok(readed_data) = read_data(self.archive) else {
-                    let _ = self.read_close_and_free();
-
+                let Ok(readed_data) = read_data(_archive) else {
                     let file_info = FileInfo {
                         file_name: _f_name,
                         size: 0,
@@ -312,6 +309,7 @@ impl ArchiveExt for Archive {
             }
         }
 
+        let _ = self.read_close_and_free(_archive);
         Ok(_result)
     }
 
@@ -344,9 +342,14 @@ impl ArchiveExt for Archive {
         };
 
         let _f_size = _meta.len() as usize;
-
+        
+        let mut _archive = unsafe { libarchive3_sys::archive_read_new() };
+        if _archive.is_null() {
+            return Err(LibArchiveError::FailedCreateArchive);
+        }
+        
         unsafe {
-            let _status_code = libarchive3_sys::archive_read_open_filename(self.archive, _file_path_cstr.as_ptr(), _f_size);
+            let _status_code = libarchive3_sys::archive_read_open_filename(_archive, _file_path_cstr.as_ptr(), _f_size);
             if _status_code != 0 {
                 return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(_status_code)));
             }
@@ -354,7 +357,7 @@ impl ArchiveExt for Archive {
 
         let mut entry: *mut ArchiveEntryStruct = unsafe { libarchive3_sys::archive_entry_new() };
         if entry.is_null() {
-            let _ = self.read_close_and_free();
+            let _ = self.read_close_and_free(_archive);
             return Err(LibArchiveError::FailedCreateArchiveEntry);
         }
 
@@ -376,7 +379,7 @@ impl ArchiveExt for Archive {
 
         let mut _result: Vec<FileInfo> = vec!();
         unsafe {
-            while libarchive3_sys::archive_read_next_header(self.archive, &mut entry) != 1 {
+            while libarchive3_sys::archive_read_next_header(_archive, &mut entry) != 1 {
                 let mut _status_code = 0;
                 let mut _f_name = std::string::String::new();
                 match get_pathname_from_entry(entry) {
@@ -384,7 +387,7 @@ impl ArchiveExt for Archive {
                         _f_name = _name;
                     },
                     Err(e) => {
-                        let _ = self.read_close_and_free();
+                        let _ = self.read_close_and_free(_archive);
                         let _file_info = FileInfo {
                             file_name: "".to_owned(),
                             size: 0,
@@ -452,7 +455,7 @@ impl ArchiveExt for Archive {
                     continue;
                 }
 
-                let _write_error = match read_and_write_data(self.archive, write_disk) {
+                let _write_error = match read_and_write_data(_archive, write_disk) {
                     Ok(_) => {
                         None
                     },
@@ -483,6 +486,8 @@ impl ArchiveExt for Archive {
         if status != 0 {
             return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(status)));
         }
+
+        let _ = self.read_close_and_free(_archive);
 
         Ok(_result)
     }
