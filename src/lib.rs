@@ -192,15 +192,7 @@ impl ArchiveExt for Archive {
             return Err(LibArchiveError::FailedCreateArchive);
         }
 
-        let mut _r = unsafe { libarchive3_sys::archive_read_support_filter_all(_archive) };
-        if _r != 0 {
-            return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(_r)));
-        }
-
-        _r = unsafe { libarchive3_sys::archive_read_support_format_all(_archive) };
-        if _r != 0 {
-            return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(_r)));
-        }
+        set_all_filter_and_format(_archive)?;
 
         let _f_size = _meta.len() as usize;
         unsafe {
@@ -354,6 +346,7 @@ impl ArchiveExt for Archive {
         if _archive.is_null() {
             return Err(LibArchiveError::FailedCreateArchive);
         }
+        set_all_filter_and_format(_archive)?;
         
         unsafe {
             let _status_code = libarchive3_sys::archive_read_open_filename(_archive, _file_path_cstr.as_ptr(), _f_size);
