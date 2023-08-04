@@ -168,6 +168,10 @@ impl ArchiveExt for Archive {
     }
 
     fn get_error_string(archive: *mut ArchiveStruct) -> Option<String> {
+        if archive.is_null () {
+            return None;
+        }
+        
         let bytes = unsafe { libarchive3_sys::archive_error_string(archive) };
         convert_c_char_to_string(bytes)
     }
@@ -208,8 +212,8 @@ impl ArchiveExt for Archive {
                 Ok(_) => {
                     return Err(LibArchiveError::FailedCreateArchiveEntry);
                 },
-                Err(e) => {
-                    return Err(e);
+                Err(_) => {
+                    return Err(LibArchiveError::FailedCreateArchiveEntryAndFailedCloseRead);
                 }
             }
         }
@@ -308,8 +312,15 @@ impl ArchiveExt for Archive {
             }
         }
 
-        let _ = read_close_and_free(_archive);
-        Ok(_result)
+        match read_close_and_free(_archive) {
+            Ok(_) => {
+                return Ok(_result);
+            },
+            Err(e) => {
+                _result.clear();
+                return Err(e);
+            }
+        }
     }
 
     fn extract_to_dir(&self, file_path: &str, target_dir_path: &str, flags: Option<i32>) -> LibArchiveResult<Vec<FileInfo>> {
@@ -357,8 +368,11 @@ impl ArchiveExt for Archive {
 
         let mut entry: *mut ArchiveEntryStruct = unsafe { libarchive3_sys::archive_entry_new() };
         if entry.is_null() {
-            let _ = read_close_and_free(_archive);
-            return Err(LibArchiveError::FailedCreateArchiveEntry);
+            match read_close_and_free(_archive) {
+                Ok(_) => return Err(LibArchiveError::FailedCreateArchiveEntry),
+                Err(_) => return Err(LibArchiveError::FailedCreateArchiveEntryAndFailedCloseRead)
+            }
+
         }
 
         let write_disk = unsafe { libarchive3_sys::archive_write_disk_new() };
@@ -486,9 +500,15 @@ impl ArchiveExt for Archive {
             return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(status)));
         }
 
-        let _ = read_close_and_free(_archive);
-
-        Ok(_result)
+        match read_close_and_free(_archive) {
+            Ok(_) => {
+                return Ok(_result);
+            },
+            Err(e) => {
+                _result.clear();
+                return Err(e);
+            }
+        }
     }
 
 }

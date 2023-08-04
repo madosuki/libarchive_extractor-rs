@@ -61,6 +61,8 @@ pub enum LibArchiveError {
     FailedFreeReadArchive,
     #[error("Failed create archive entry")]
     FailedCreateArchiveEntry,
+    #[error("Failed create anrchive entry and failed close read archive pointer")]
+    FailedCreateArchiveEntryAndFailedCloseRead,
     #[error("Failed create archive")]
     FailedCreateArchive,
     #[error("Failed create directory")]
