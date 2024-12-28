@@ -96,16 +96,16 @@ fn read_data(archive: *mut ArchiveStruct) -> LibArchiveResult<Vec<u8>> {
     Ok(result)
 }
 
-fn read_free(mut archive: *mut ArchiveStruct) -> LibArchiveResult<()> {
-    let status_code = unsafe { libarchive3_sys::archive_free(archive) };
+fn read_free(mut _archive: *mut ArchiveStruct) -> LibArchiveResult<()> {
+    let status_code = unsafe { libarchive3_sys::archive_free(_archive) };
     if status_code != 0 {
         return Err(LibArchiveError::FailedFreeArchive);
     }
-    archive = std::ptr::null_mut();
+    _archive = std::ptr::null_mut();
     Ok(())
 }
 
-fn read_close_and_free(mut read_archive: *mut ArchiveStruct) -> LibArchiveResult<()> {
+fn read_close_and_free(read_archive: *mut ArchiveStruct) -> LibArchiveResult<()> {
     if read_archive.is_null() {
         return Ok(());
     }
@@ -191,7 +191,7 @@ impl ArchiveExt for Archive {
         };
 
 
-        let mut archive: *mut ArchiveStruct = unsafe { libarchive3_sys::archive_read_new() };
+        let archive: *mut ArchiveStruct = unsafe { libarchive3_sys::archive_read_new() };
         if archive.is_null() {
             return Err(LibArchiveError::FailedCreateArchive);
         }
@@ -239,10 +239,10 @@ impl ArchiveExt for Archive {
                     continue;
                 }
 
-                let mut f_name = std::string::String::new();
+                let f_name;
                 match convert_c_char_to_string(pathname) {
-                    Some(_n) => {
-                        f_name = _n;
+                    Some(n) => {
+                        f_name = n;
                     },
                     _ => {
                         let file_info = FileInfo {
@@ -262,7 +262,7 @@ impl ArchiveExt for Archive {
                     },
                 }
                 
-                let mut entry_size = libarchive3_sys::archive_entry_size(entry);
+                let entry_size = libarchive3_sys::archive_entry_size(entry);
                 if entry_size < 1 {
                     let file_info = FileInfo {
                         file_name: f_name,
@@ -353,7 +353,7 @@ impl ArchiveExt for Archive {
 
         let f_size = meta.len() as usize;
         
-        let mut archive = unsafe { libarchive3_sys::archive_read_new() };
+        let archive = unsafe { libarchive3_sys::archive_read_new() };
         if archive.is_null() {
             return Err(LibArchiveError::FailedCreateArchive);
         }
@@ -394,8 +394,7 @@ impl ArchiveExt for Archive {
         let mut result: Vec<FileInfo> = vec!();
         unsafe {
             while libarchive3_sys::archive_read_next_header(archive, &mut entry) != 1 {
-                let mut status_code = 0;
-                let mut f_name = std::string::String::new();
+                let f_name;
                 match get_pathname_from_entry(entry) {
                     Ok(name) => {
                         f_name = name;
@@ -453,7 +452,7 @@ impl ArchiveExt for Archive {
                     continue;
                 }
                 
-                let mut entry_size = libarchive3_sys::archive_entry_size(entry);
+                let entry_size = libarchive3_sys::archive_entry_size(entry);
                 if entry_size < 1 {
                     let _ = libarchive3_sys::archive_write_finish_entry(write_disk);
                     
