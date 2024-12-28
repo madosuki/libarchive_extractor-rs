@@ -178,11 +178,11 @@ impl ArchiveExt for Archive {
 
 
     fn extract_to_memory(&self, file_path: &str) -> LibArchiveResult<Vec<DecompressedData>> {
-        let Ok(_meta) = std::fs::metadata(file_path) else {
+        let Ok(meta) = std::fs::metadata(file_path) else {
             return Err(LibArchiveError::FailedGetMetaDataFromFile);
         };
         
-        if !_meta.is_file() {
+        if !meta.is_file() {
             return Err(LibArchiveError::IsNotFile);
         }
 
@@ -198,7 +198,7 @@ impl ArchiveExt for Archive {
 
         set_all_filter_and_format(archive)?;
 
-        let f_size = _meta.len() as usize;
+        let f_size = meta.len() as usize;
         unsafe {
             let status_code = libarchive3_sys::archive_read_open_filename(archive, file_path_cstr.as_ptr(), f_size);
             if status_code != 0 {
