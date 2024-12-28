@@ -9,15 +9,15 @@ pub use error::{LibArchiveError, LibArchiveResult, LibArchiveInternalStatus};
 //     unsafe { libarchive3_sys::archive_entry_free(entry); }
 // }
 
-fn set_all_filter_and_format(_archive: *mut ArchiveStruct) -> LibArchiveResult<()> {
-    let _read_support_filter_all_result = unsafe { libarchive3_sys::archive_read_support_filter_all(_archive) };
-    if _read_support_filter_all_result != 0 {
-        return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(_read_support_filter_all_result)));
+fn set_all_filter_and_format(archive: *mut ArchiveStruct) -> LibArchiveResult<()> {
+    let read_support_filter_all_result = unsafe { libarchive3_sys::archive_read_support_filter_all(archive) };
+    if read_support_filter_all_result != 0 {
+        return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(read_support_filter_all_result)));
     }
 
-    let _read_support_format_all_result = unsafe { libarchive3_sys::archive_read_support_format_all(_archive) };
-    if _read_support_format_all_result != 0 {
-        return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(_read_support_format_all_result)));
+    let read_support_format_all_result = unsafe { libarchive3_sys::archive_read_support_format_all(archive) };
+    if read_support_format_all_result != 0 {
+        return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(read_support_format_all_result)));
     }
     
     Ok(())
