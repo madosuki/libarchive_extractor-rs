@@ -81,7 +81,7 @@ fn read_data(archive: *mut ArchiveStruct) -> LibArchiveResult<Vec<u8>> {
         let mut readed_size = 0 as usize;
         let r = unsafe { libarchive3_sys::archive_read_data_block(archive, &tmp, &mut readed_size, &mut offset) };
 
-        if r == 1 {
+        if r == 1 || tmp.is_null() {
             break;
         }
 
