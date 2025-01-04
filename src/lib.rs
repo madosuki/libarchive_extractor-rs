@@ -1,9 +1,15 @@
 use libarchive3_sys_by_madosuki as libarchive3_sys;
 pub use libarchive3_sys::{ArchiveStruct, ArchiveEntryStruct};
 
-use libc::{ c_int, c_char, c_void, size_t};
+use libc::{ c_char, c_int, c_void, size_t};
 pub mod error;
 pub use error::{LibArchiveError, LibArchiveResult, LibArchiveInternalStatus};
+
+struct CVoidPtrForThreadSafe {
+    ptr_lock: std::sync::Mutex<*mut c_void>,
+}
+unsafe impl Send for CVoidPtrForThreadSafe {}
+unsafe impl Sync for CVoidPtrForThreadSafe {}
 
 // fn entry_free(entry: *mut ArchiveEntryStruct) {
 //     unsafe { libarchive3_sys::archive_entry_free(entry); }
@@ -71,6 +77,32 @@ fn read_and_write_data(archive: *mut ArchiveStruct, archive_write: *mut ArchiveS
 
     Ok(())
 }
+
+fn read_data_with_mutex(archive: *mut ArchiveStruct) -> LibArchiveResult<Vec<u8>> {
+    let mut offset = 0 as i64;
+    let mut result: Vec<u8> = vec!();
+
+    loop {
+        let tmp: *mut c_void = std::ptr::null_mut();
+        let safe_ptr = CVoidPtrForThreadSafe{ ptr_lock: std::sync::Mutex::new(tmp) };
+        let mut readed_size = 0 as usize;
+        let r = unsafe { libarchive3_sys::archive_read_data_block(archive, &*safe_ptr.ptr_lock.lock().unwrap(), &mut readed_size, &mut offset) };
+
+        if r == 1 {
+            break;
+        }
+
+        let for_safe: &[u8] = unsafe { std::slice::from_raw_parts(*safe_ptr.ptr_lock.lock().unwrap() as *mut u8, readed_size) };
+        result.append(&mut for_safe.to_vec());
+
+        if r == 0 {
+            continue;
+        }
+    }
+
+    Ok(result)
+}
+
 
 fn read_data(archive: *mut ArchiveStruct) -> LibArchiveResult<Vec<u8>> {
     let mut offset = 0 as i64;
@@ -140,6 +172,7 @@ pub struct Archive;
 
 pub trait ArchiveExt {
     fn new() -> LibArchiveResult<Archive>;
+    fn extract_to_memory_for_async(&self, file_path: &str) -> LibArchiveResult<Vec<DecompressedData>>;
     fn extract_to_memory(&self, file_path: &str) -> LibArchiveResult<Vec<DecompressedData>>;
     fn get_errno(&self, archive: *mut ArchiveStruct) -> Option<i32>;
     fn get_error_string(archive: *mut ArchiveStruct) -> Option<String>;
@@ -176,6 +209,151 @@ impl ArchiveExt for Archive {
         convert_c_char_to_string(bytes)
     }
 
+    fn extract_to_memory_for_async(&self, file_path: &str) -> LibArchiveResult<Vec<DecompressedData>> {
+        let Ok(meta) = std::fs::metadata(file_path) else {
+            return Err(LibArchiveError::FailedGetMetaDataFromFile);
+        };
+        
+        if !meta.is_file() {
+            return Err(LibArchiveError::IsNotFile);
+        }
+
+        let Ok(file_path_cstr) = std::ffi::CString::new(file_path) else {
+            return Err(LibArchiveError::NulError);
+        };
+
+
+        let archive: *mut ArchiveStruct = unsafe { libarchive3_sys::archive_read_new() };
+        if archive.is_null() {
+            return Err(LibArchiveError::FailedCreateArchive);
+        }
+
+        set_all_filter_and_format(archive)?;
+
+        let f_size = meta.len() as usize;
+        unsafe {
+            let status_code = libarchive3_sys::archive_read_open_filename(archive, file_path_cstr.as_ptr(), f_size);
+            if status_code != 0 {
+                return Err(LibArchiveError::LibArchiveInternalError(LibArchiveInternalStatus::from(status_code)));
+            }
+        };
+        
+        let mut entry: *mut ArchiveEntryStruct = unsafe { libarchive3_sys::archive_entry_new() };
+        if entry.is_null() {
+            match read_close_and_free(archive) {
+                Ok(_) => {
+                    return Err(LibArchiveError::FailedCreateArchiveEntry);
+                },
+                Err(_) => {
+                    return Err(LibArchiveError::FailedCreateArchiveEntryAndFailedCloseRead);
+                }
+            }
+        }
+
+        let mut result: Vec<DecompressedData> = vec!();
+        unsafe {
+            while libarchive3_sys::archive_read_next_header(archive, &mut entry) != 1 {
+                let pathname = libarchive3_sys::archive_entry_pathname(entry);
+                if pathname.is_null() {
+                    let file_info = FileInfo {
+                        file_name: "".to_owned(),
+                        size: 0,
+                        is_success: false,
+                        error: Some(LibArchiveError::FailedGetPathNameFromEntry),
+                    };
+
+                    let decompress_data = DecompressedData {
+                        file_info,
+                        value: vec!(),
+                    };
+                    result.push(decompress_data);
+                    
+                    continue;
+                }
+
+                let f_name;
+                match convert_c_char_to_string(pathname) {
+                    Some(n) => {
+                        f_name = n;
+                    },
+                    _ => {
+                        let file_info = FileInfo {
+                            file_name: "".to_owned(),
+                            size: 0,
+                            is_success: false,
+                            error: Some(LibArchiveError::FailedGetPathNameFromEntry),
+                        };
+
+                        let decompress_data = DecompressedData {
+                            file_info,
+                            value: vec!(),
+                        };
+                        result.push(decompress_data);
+
+                        continue;
+                    },
+                }
+                
+                let entry_size = libarchive3_sys::archive_entry_size(entry);
+                if entry_size < 1 {
+                    let file_info = FileInfo {
+                        file_name: f_name,
+                        size: 0,
+                        is_success: false,
+                        error: Some(LibArchiveError::EntrySizeLessThanOne),
+                    };
+
+                    let decompress_data = DecompressedData {
+                        file_info,
+                        value: vec!(),
+                    };
+                    result.push(decompress_data);
+                    
+                    continue;
+                }
+
+                let Ok(readed_data) = read_data_with_mutex(archive) else {
+                    let file_info = FileInfo {
+                        file_name: f_name,
+                        size: 0,
+                        is_success: false,
+                        error: Some(LibArchiveError::FailedUncompress),
+                    };
+
+                    let decompress_data = DecompressedData {
+                        file_info,
+                        value: vec!(),
+                    };
+                    result.push(decompress_data);
+                    
+                    continue;
+                };
+
+                let file_info = FileInfo {
+                    file_name: f_name,
+                    size: entry_size as usize,
+                    is_success: true,
+                    error: None,
+                };
+
+                let tmp = DecompressedData {
+                    file_info,
+                    value: readed_data,
+                };
+                result.push(tmp);
+            }
+        }
+
+        match read_close_and_free(archive) {
+            Ok(_) => {
+                return Ok(result);
+            },
+            Err(e) => {
+                result.clear();
+                return Err(e);
+            }
+        }
+    }
 
     fn extract_to_memory(&self, file_path: &str) -> LibArchiveResult<Vec<DecompressedData>> {
         let Ok(meta) = std::fs::metadata(file_path) else {
