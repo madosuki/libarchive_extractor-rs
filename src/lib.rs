@@ -5,11 +5,13 @@ use libc::{ c_char, c_int, c_void, size_t};
 pub mod error;
 pub use error::{LibArchiveError, LibArchiveResult, LibArchiveInternalStatus};
 
+/*
 struct CVoidPtrForThreadSafe {
     ptr_lock: std::sync::Mutex<*mut c_void>,
 }
 unsafe impl Send for CVoidPtrForThreadSafe {}
 unsafe impl Sync for CVoidPtrForThreadSafe {}
+*/
 
 // fn entry_free(entry: *mut ArchiveEntryStruct) {
 //     unsafe { libarchive3_sys::archive_entry_free(entry); }
@@ -104,6 +106,7 @@ fn read_and_write_data(archive: *mut ArchiveStruct, archive_write: *mut ArchiveS
 // }
 
 
+#[allow(invalid_null_arguments)]
 fn read_data(archive: *mut ArchiveStruct) -> LibArchiveResult<Vec<u8>> {
     let mut offset = 0 as i64;
     let mut result: Vec<u8> = vec!();
@@ -172,7 +175,6 @@ pub struct Archive;
 
 pub trait ArchiveExt {
     fn new() -> LibArchiveResult<Archive>;
-    fn extract_to_memory_for_async(&self, file_path: &str) -> LibArchiveResult<Vec<DecompressedData>>;
     fn extract_to_memory(&self, file_path: &str) -> LibArchiveResult<Vec<DecompressedData>>;
     fn get_errno(&self, archive: *mut ArchiveStruct) -> Option<i32>;
     fn get_error_string(archive: *mut ArchiveStruct) -> Option<String>;
